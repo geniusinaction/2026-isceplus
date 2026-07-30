@@ -1687,7 +1687,7 @@ def plot_timing(h5_path, ds_name, aux=None, burst_id='burst', date_str=''):
     sr = aux['slant_range']
     azt = aux['zero_doppler_time']
     extent = [sr[0], sr[-1], azt[-1], azt[0]]
-    label = f'{burst_id}_{date_str.replace('-','')}: {ds_name}'
+    label = f"{burst_id}_{date_str.replace('-','')}: {ds_name}"
 
     _plot_dataset(
         data_px, extent=extent, grid='lut',
