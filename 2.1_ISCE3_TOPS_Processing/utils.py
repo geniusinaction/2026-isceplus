@@ -43,6 +43,9 @@ import isce3
 import s1reader
 import snaphu
 
+# Ensure ! commands find the conda environment's executables
+os.environ['PATH'] = os.pathsep.join([os.path.dirname(sys.executable), os.environ.get('PATH', '')])
+
 for _var, _sub in [('PROJ_DATA', 'share/proj'), ('GDAL_DATA', 'share/gdal')]:
     if _var not in os.environ:
         _path = os.path.join(sys.prefix, _sub)
@@ -268,6 +271,28 @@ def compute_isce3_incidence_angle(h5_path):
 # ===========================================================================
 # 4. SAFE Burst I/O
 # ===========================================================================
+
+def get_date_list(safe_dir):
+    """Search and return the list of dates available in the given SAFE file directory.
+    """
+    date_list = []
+
+    # for files in compressed zip format
+    for f in sorted(safe_dir.glob('S1[ABCDE]_IW_SLC__*.zip')):
+        m = re.match(r'S1[ABCDE]_IW_SLC__1S.._(\d{8})T.*', f.name)
+        if m:
+            date_list.append(m.group(1))
+
+    # for files in uncompressed/unzipped
+    for d in sorted(safe_dir.glob('S1[ABCDE]_IW_SLC__*.SAFE')):
+        m = re.match(r'S1[ABCDE]_IW_SLC__1S.._(\d{8})T.*', d.name)
+        if m:
+            date_list.append(m.group(1))
+
+    date_list = sorted(list(set(date_list)))
+
+    return date_list
+
 
 def extract_burst_slc(safe_path, burst_id):
     """Extract a single burst's SLC from a Sentinel-1 SAFE measurement TIFF.
