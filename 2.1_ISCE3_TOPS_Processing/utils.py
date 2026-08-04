@@ -2291,8 +2291,14 @@ def write_geo_runconfig(out_path, safe_path, orbit_path, burst_id,
             },
         },
     }
+
+    # create directory if not exist
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # write to YAML file
     with open(out_path, 'w') as f:
         yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+    return out_path
 
 def _s1_cslc_worker(args):
     """Module-level worker for multiprocessing s1_cslc.py calls.
@@ -3323,10 +3329,7 @@ def ifgram_and_coherence(ref_h5, sec_h5, burst_id, ifgram_dir,
     burst_id : str
         Burst identifier (e.g. ``'t124_264306_iw2'``).
     ifgram_dir : str or Path
-        Top-level directory for interferogram outputs. Files are
-        saved under ``{ifgram_dir}/{ref_ymd}_{sec_ymd}/``, where
-        the dates (YYYYMMDD) are extracted from the paths of
-        *ref_h5* and *sec_h5*.
+        Directory for interferogram outputs.
     coh_win : int
         Sliding-window size for coherence estimation (default 5
         for a 5×5 boxcar window).
@@ -3358,15 +3361,14 @@ def ifgram_and_coherence(ref_h5, sec_h5, burst_id, ifgram_dir,
     ref_ymd = ref_h5.parent.name
     sec_ymd = sec_h5.parent.name
 
-    # Build output directory and file names
-    pair_dir = Path(ifgram_dir) / f'{ref_ymd}_{sec_ymd}'
-    pair_dir.mkdir(parents=True, exist_ok=True)
-    ifg_path = pair_dir / f'{burst_id}.int.tif'
-    coh_path = pair_dir / f'{burst_id}.coh.tif'
+    # Output file names
+    ifgram_dir.mkdir(parents=True, exist_ok=True)
+    ifg_path = ifgram_dir / f'{burst_id}.int.tif'
+    coh_path = ifgram_dir / f'{burst_id}.coh.tif'
 
     # Skip if already processed
     if ifg_path.exists() and coh_path.exists():
-        print(f'  skip (exists): {burst_id} {ref_ymd}_{sec_ymd}')
+        print(f'files exist for {burst_id} {ref_ymd}_{sec_ymd}, skip re-generating.')
         return ifg_path, coh_path
 
     # Read SLC data (geocoded, complex64)
@@ -3381,6 +3383,9 @@ def ifgram_and_coherence(ref_h5, sec_h5, burst_id, ifgram_dir,
     # Form complex interferogram: ifg = ref * conj(sec)
     ifg = ref_arr * np.conj(sec_arr)
 
+    print(f'write file: {ifg_path}')
+    save_tiff(str(ifg_path), ifg, gt, proj_wkt, dtype=gdal.GDT_CFloat32)
+
     # Compute complex coherence (sliding boxcar, full resolution)
     win_area = coh_win * coh_win
     ref_pow = (np.abs(ref_arr) ** 2).astype(np.float32)
@@ -3392,14 +3397,11 @@ def ifgram_and_coherence(ref_h5, sec_h5, burst_id, ifgram_dir,
         coh = np.abs(ifg_sum) / np.sqrt(ref_sum * sec_sum)
     coh = np.nan_to_num(coh, nan=0.0).clip(0.0, 1.0).astype(np.float32)
 
-    # Save interferogram and coherence GeoTIFFs
-    save_tiff(str(ifg_path), ifg, gt, proj_wkt,
-              dtype=gdal.GDT_CFloat32)
-    save_tiff(str(coh_path), coh, gt, proj_wkt,
-              dtype=gdal.GDT_Float32)
-    print(f'  created: {ifg_path.name}  {coh_path.name}')
+    print(f'write file: {coh_path}')
+    save_tiff(str(coh_path), coh, gt, proj_wkt, dtype=gdal.GDT_Float32)
 
     return ifg_path, coh_path
+
 
 def stitch_ifgrams(burst_dir, out_bounds_wsen, output_dir,
                    file_ext='.int.tif'):
