@@ -51,7 +51,6 @@ for _var, _sub in [('PROJ_DATA', 'share/proj'), ('GDAL_DATA', 'share/gdal')]:
         _path = os.path.join(sys.prefix, _sub)
         if os.path.isdir(_path):
             os.environ[_var] = _path
-
 # ---------------------------------------------------------------------------
 # ===========================================================================
 # ===========================================================================
@@ -97,7 +96,7 @@ __all__ = [
     "load_orbit_from_h5", "compute_isce3_incidence_angle",
     "extract_burst_slc",
     "compute_static_troposphere_delay",
-    "read_cslc_array", "align_cslc_pair", "get_cslc_extent",
+    "read_cslc_array", "align_cslc_pair",
     "compute_union_grid", "blit_into_stitched",
     "stitch_arrays", "multilook_ifg",
     "stitch_bursts",
@@ -105,7 +104,6 @@ __all__ = [
     "estimate_phsig_correlation",
     "save_tiff",
     "write_geo_runconfig", "run_s1_cslc_parallel",
-    "write_static_layers_config", "generate_static_layers",
     "find_burst_input_files", "find_burst_ids",
     "compute_los_angles", "multilook_nearest", "stitch_burst_los_angles",
     "read_aux_dataset", "compute_static_troposphere_correction",
@@ -118,11 +116,10 @@ __all__ = [
     "plot_coregistration",
     "plot_phase_triple", "plot_unwrap_results",
     "download_opera_static_layers",
-    "get_file_geo_metadata", "plot_pair",
-    "crop_slc_single", "generate_ifgram_pairs",
-    "form_single_ifgram",
+    "plot_pair",
+    "generate_ifgram_pairs",
     "ifgram_and_coherence",
-    "stitch_ifgrams",
+    "generate_stitched_ifgrams",
     "multilook_tif",
     "filter_tif",
     "generate_phsig_coh_tif",
@@ -135,46 +132,39 @@ __all__ = [
 # ===========================================================================
 
 def clear_large_arrays():
-    """Delete known large arrays from the caller's global scope + garbage collect.
+    """Delete temporary variables from the caller's global scope + garbage collect.
 
-    Covers all sections of the notebook: 4.2.3 single-burst inspection,
-    4.3 corrections, 5.1 demo, 5.2 per-burst stitching, 5.3 multilook,
-    5.4 phsig, 5.5 unwrap, 6 save, 7 ionosphere.
+    Designed for the call site in ``S1_GSLC_burst.ipynb`` section 5.2
+    (before stitching): clears the large demo arrays and aux datasets
+    produced by sections 3.x/4.x/5.1, which are no longer needed after
+    the burst interferograms have been written to disk.
+
+    Safety rules
+    ------------
+    - Only variables that are confirmed unused downstream are listed.
+    - Variables still needed later (e.g. ``burst_ifg_list``, ``burst_coh_list``,
+      ``ifg``, ``coh``, ``ifg_filt``, ``phsig``, ``unw``, ``conncomp``,
+      ``water_mask``, ``inc_arr``, ``az_arr``, ...) are **never** touched.
+    - Deleting a name that does not exist is a no-op, so the list is
+      intentionally kept broad to cover interrupted/re-run cells.
     """
     _KNOWN = [
-        # ---- 4.2.3 single-burst inspection ----
-        'rdr_slc', 'rdr_amp', 'rdr_amp_db',
-        'geo_slc', 'geo_amp', 'geo_amp_db', 'geo_phase',
-        # ---- 4.3 correction arrays ----
-        'tide_los', 'tide_az', 'iono',
-        'wet_tropo', 'dry_tropo',
-        'slant_range_arr', 'azt_arr', 'fm_mismatch', 'az_carrier',
-        'inc_deg', 'hgt_arr', 'tropo_disp', 'static_tropo',
-        # ---- 5.1 demo interferogram ----
-        'ifg', 'coh', 'ifg_sum',
-        'ref_pow', 'sec_pow',
-        'ref_sum', 'sec_sum',
-        # ---- 5.2 per-burst processing ----
-        'extents_list', 'out_arr',
-        'ifg_stitched', 'coh_stitched',
-        'ifg_list', 'coh_list',
-        # ---- 5.3 multilook + filter ----
-        'ifg_ml', 'ifg_filt', 'ph_ml', 'ph_filt', 'nodata',
-        # ---- 5.4 phase-sigma ----
-        'phsig',
-        # ---- 5.5 unwrap ----
-        'ph', 'unw', 'conncomp', 'water_mask',
-        'unw_m', 'wrapped',
-        'dem', 'hillshade',
-        'dx_grad', 'dy_grad', 'slope', 'aspect',
-        # ---- 6 / 7 LOS arrays ----
-        'inc_arr', 'az_arr',
-        # ---- per-burst temporaries (in case loop was interrupted) ----
-        'ref_arr', 'sec_arr',
-        'ref_pow', 'sec_pow',
-        'ifg_sum', 'ref_sum', 'sec_sum',
-        'ifg_burst', 'coh_burst',
-        's1_slc', 'stitched',
+        # ---- 3.x download temporaries ----
+        'ext_str', 'buf', 'dem_wsen', 'dem_wsen_str', 'tec_file',
+        # ---- 4.1 / 4.2 run-config temporaries ----
+        'config_list', 'kwargs', 'parallel',
+        # ---- 4.2.2 demo burst inspection ----
+        'demo_burst_id', 'demo_date', 'demo_cslc_path', 'demo_safe_path',
+        # ---- 4.3 aux datasets (dict of 2-D LUT arrays, large) ----
+        'aux_ds', 'phy_ds_names', 'img_ds_names',
+        # ---- 5.1 demo interferogram (large arrays) ----
+        'ref_arr', 'sec_arr', 'flag_nodata',
+        'burst_ifg', 'burst_pha', 'burst_coh',
+        'ref_pow', 'sec_pow', 'ifg_sum', 'ref_sum', 'sec_sum',
+        # ---- 5.1 demo display objects ----
+        'gt', 'ext', 'fig', 'axes',
+        # ---- 5.1 per-burst loop leftovers (small path objects) ----
+        'ref_h5', 'sec_h5', 'ifg_path', 'coh_path',
     ]
     frame = sys._getframe(1)
     deleted = [n for n in _KNOWN if n in frame.f_globals]
@@ -185,10 +175,10 @@ def clear_large_arrays():
         names = ', '.join(deleted[:10])
         if len(deleted) > 10:
             names += f' ... ({len(deleted) - 10} more)'
-        print(f'Cleared {len(deleted)} array(s): {names}')
+        print(f'Cleared {len(deleted)} temporary variable(s): {names}')
 
 # ===========================================================================
-# 3. Orbit & Geometry
+# 3.Orbit & Geometry
 # ===========================================================================
 
 def load_orbit_from_h5(h5_path):
@@ -269,7 +259,7 @@ def compute_isce3_incidence_angle(h5_path):
     return inc_deg
 
 # ===========================================================================
-# 4. SAFE Burst I/O
+# 4.SAFE Burst I/O
 # ===========================================================================
 
 def get_date_list(safe_dir):
@@ -292,7 +282,6 @@ def get_date_list(safe_dir):
     date_list = sorted(list(set(date_list)))
 
     return date_list
-
 
 def extract_burst_slc(safe_path, burst_id):
     """Extract a single burst's SLC from a Sentinel-1 SAFE measurement TIFF.
@@ -616,7 +605,7 @@ def find_burst_ids(safe_base, orbit_dir=None, verbose=False):
     return burst_id_list, date_list
 
 # ===========================================================================
-# 5. CSLC Data I/O (OPERA HDF5)
+# 5.CSLC DATA I/O (OPERA HDF5)
 # ===========================================================================
 
 def read_cslc_array(h5_path):
@@ -664,30 +653,8 @@ def read_cslc_array(h5_path):
 
     return data_vv, geo_transform, epsg, proj_wkt
 
-def get_cslc_extent(h5_path):
-    """Read coordinate vectors from an OPERA CSLC HDF5 file (cheap metadata).
-
-    Parameters
-    ----------
-    h5_path : str or Path
-
-    Returns
-    -------
-    x0, dx, y0, dy, nrows, ncols, epsg, proj_wkt
-    """
-    with h5py.File(h5_path, 'r') as f:
-        x = f['/data/x_coordinates'][:]
-        y = f['/data/y_coordinates'][:]
-        epsg = int(f['/data/projection'][()])
-    dx = x[1] - x[0]
-    dy = y[1] - y[0]
-    srs = osr.SpatialReference()
-    srs.ImportFromEPSG(epsg)
-    proj_wkt = srs.ExportToWkt()
-    return x[0], dx, y[0], dy, len(y), len(x), epsg, proj_wkt
-
 # ===========================================================================
-# 6. Stitching & Multilooking
+# 6.Stitching & Multilooking
 # ===========================================================================
 
 def align_cslc_pair(ref_arr, ref_gt, sec_arr, sec_gt):
@@ -1183,7 +1150,7 @@ def multilook_nearest(arr, az_looks, rg_looks):
         return arr[:, ::az_looks, ::rg_looks]
 
 # ===========================================================================
-# 7. Goldstein Adaptive Phase Filter
+# 7.Goldstein Adaptive Phase Filter
 # ===========================================================================
 
 def goldstein_filter(complex_arr, alpha=0.5, psize=32, no_data_value=None):
@@ -1256,7 +1223,7 @@ def goldstein_filter(complex_arr, alpha=0.5, psize=32, no_data_value=None):
     return filtered
 
 # ===========================================================================
-# 8. Phase-Sigma Coherence Estimation
+# 8.Phase-Sigma Coherence Estimation
 # ===========================================================================
 
 def _gaussian_kernel(size):
@@ -1410,7 +1377,7 @@ def estimate_phsig_correlation(ifg_arr, ps_win=5, grad_win=5, nlks=3.0):
     return np.clip(coh, 0.0, 1.0)
 
 # ===========================================================================
-# 9. GeoTIFF I/O
+# 9.GeoTIFF I/O
 # ===========================================================================
 
 def save_tiff(out_path, data, gt, proj_wkt, dtype=None):
@@ -1458,7 +1425,7 @@ def save_tiff(out_path, data, gt, proj_wkt, dtype=None):
     ds = None
 
 # ===========================================================================
-# 10. Troposphere & Auxiliary Datasets
+# 10.Troposphere & Auxiliary Datasets
 # ===========================================================================
 
 def compute_static_troposphere_delay(incidence_angle_arr, hgt_arr):
@@ -1589,7 +1556,7 @@ def compute_static_troposphere_correction(aux, h5_path, dem_path):
     return compute_static_troposphere_delay(inc_deg, h_rg)
 
 # ===========================================================================
-# 11. Dataset Display Helpers & Timing Plot
+# 11.Dataset Display Helpers & Timing Plot
 # ===========================================================================
 
 def _to_pixels(data, unit, grid):
@@ -1637,42 +1604,6 @@ def _broadcast_1d_to_2d(data, broadcast_direction, n_az, n_rg):
         return data
     else:
         raise ValueError(f'Unknown broadcast_direction: {broadcast_direction}')
-
-def _get_data(h5_path, name, aux=None):
-    """Get a named dataset (2-D or 1-D, possibly broadcast).
-
-    Special names:
-      ``'troposphere'`` — computed static troposphere delay (requires *dem_path*
-      to be passed through *kwargs*; *aux* is ignored).
-
-    Returns
-    -------
-    data_2d : np.ndarray  Square pixels ``(n_az, n_rg)`` in physical units.
-    unit : str            ``'m'``, ``'s'``, or ``'rad'``.
-    grid : str            ``'lut'`` or ``'utm'``.
-    meta : dict           Metadata entry from ``_DATASET_META``.
-    """
-    if name == 'troposphere':
-        raise RuntimeError('troposphere must be handled specially by caller')
-
-    if aux is None:
-        aux = read_aux_dataset(h5_path)
-
-    meta = _DATASET_META[name]
-    grid = meta['grid']
-    unit = meta['unit']
-    broadcast_dir = meta.get('broadcast', 'none')
-    n_az, n_rg = aux.get('n_az', 0), aux.get('n_rg', 0)
-
-    if name not in aux:
-        raise KeyError(f'Dataset "{name}" not found in {h5_path}')
-
-    data = aux[name]
-
-    # Broadcast 1-D arrays to 2-D
-    data = _broadcast_1d_to_2d(data, broadcast_dir, n_az, n_rg)
-
-    return data, unit, grid, meta
 
 def plot_timing(h5_path, ds_name, aux=None, burst_id='burst', date_str=''):
     """Read/compute, print statistics, and plot a single dataset in pixel units.
@@ -1761,7 +1692,7 @@ def _plot_dataset(data, extent, grid, title, cbar_units,
     show_and_close()
 
 # ===========================================================================
-# 12. Water Mask
+# 12.Water Mask
 # ===========================================================================
 
 def load_water_mask(gt_ml, ml_shape, epsg_utm, wbd_path=None):
@@ -1952,7 +1883,7 @@ def download_nasadem_water_mask(bbox_wsen, output_dir):
           f'water={water_pct:.1f}%, land={land_pct:.1f}%)')
 
 # ===========================================================================
-# 13. LOS Angle Computation
+# 13.LOSAngle Computation
 # ===========================================================================
 
 def compute_los_angles(static_h5_path):
@@ -2169,7 +2100,7 @@ def stitch_burst_los_angles(static_layer_path_list,
     return inc_stitched, az_stitched, out_gt, epsg
 
 # ===========================================================================
-# 14. COMPASS/OPERA Run Configuration & Processing
+# 14.COMPASS/OPERARun Configuration & Processing
 # ===========================================================================
 
 def write_geo_runconfig(out_path, safe_path, orbit_path, burst_id,
@@ -2355,67 +2286,12 @@ def run_s1_cslc_parallel(cfg_list, n_workers=2):
 
     return ok
 
-def write_static_layers_config(src_cfg_path, dst_cfg_path):
-    """Create a static-layers runconfig by copying a CSLC config and
-    changing the product_type to trigger s1_static_layers processing.
-
-    Parameters
-    ----------
-    src_cfg_path : str or Path
-        Path to an existing CSLC geo runconfig YAML.
-    dst_cfg_path : str or Path
-        Output path for the static-layers runconfig.
-    """
-    with open(src_cfg_path) as f:
-        cfg = yaml.safe_load(f)
-    cfg['runconfig']['groups']['primary_executable']['product_type'] = 'CSLC_S1_STATIC'
-    with open(dst_cfg_path, 'w') as f:
-        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
-
-def generate_static_layers(burst_id_list, config_dir, process_dir,
-                           template_ymd):
-    """Generate static layers (layover_shadow_mask, local_incidence_angle,
-    LOS vectors) for each burst ID.
-
-    Static layers are date-independent — one run per burst covers all
-    dates.  Produces ``static_layers_<burst_id>.h5`` files.
-
-    Parameters
-    ----------
-    burst_id_list : list of str
-        Burst identifiers.
-    config_dir : Path
-        Directory containing CSLC geo runconfig YAML files.
-    process_dir : Path
-        Process directory (parent of logs/ and CSLC/).
-    template_ymd : str
-        Any valid YMD for which a config exists; used as template.
-
-    Returns
-    -------
-    ok : int
-        Number of bursts successfully generated.
-    """
-    logs_dir = process_dir / 'logs'
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    process_dir.joinpath('CSLC').mkdir(parents=True, exist_ok=True)
-
-    tasks = []
-    for burst_id in burst_id_list:
-        src = config_dir / f'geo_runconfig_{template_ymd}_{burst_id}.yaml'
-        dst = config_dir / f'static_layers_{burst_id}.yaml'
-        write_static_layers_config(str(src), str(dst))
-        tasks.append((burst_id, dst, logs_dir / f'static_layers_{burst_id}.log'))
-
-    return run_s1_cslc_parallel(tasks, n_workers=2)
-
 def download_opera_static_layers(burst_id_list, process_dir, ref_ymd,
                            bbox_wsen=None):
     """Download OPERA CSLC-S1-STATIC products from ASF (fast, recommended).
 
     Searches ASF's OPERA-S1 catalog and downloads pre-computed
-    CSLC-STATIC .h5 granules.  Much faster than generating static layers
-    locally via :func:`generate_static_layers`.
+    CSLC-STATIC .h5 granules.
 
     Parameters
     ----------
@@ -2506,7 +2382,7 @@ def _esa_to_opera(bid):
     return f'T{p[0][1:]}-{p[1]:0>6}-{p[2].upper()}'
 
 # ===========================================================================
-# 15. Plotting: Coordinate Extents & Axis Formatting
+# 15.Plotting: Coordinate Extents & Axis Formatting
 # ===========================================================================
 
 def extent_utm(gt, shape):
@@ -2599,7 +2475,7 @@ def set_ax_pixel(ax, axis='both'):
     return
 
 # ===========================================================================
-# 16. Plotting: Convenience Functions
+# 16.Plotting: Convenience Functions
 # ===========================================================================
 
 def plot_data(ax, data, title=None, cmap='jet', vmin=None, vmax=None,
@@ -2774,7 +2650,6 @@ def plot_phase_triple(ph1, ph2, ph3, title1, title2, title3,
     set_ax_pixel(axes[0], axis='y')
     return
 
-
 def plot_unwrap_results(ifg_filt, unw, conncomp, gt_ml, epsg_utm, dem_path, figsize=(12,3)):
     """Plot wrapped and unwrapped phase over a DEM hillshade."""
 
@@ -2946,38 +2821,8 @@ def plot_coregistration(safe_path, cslc_path, burst_id, date,
     show_and_close()
 
 # ===========================================================================
-# 17. SARForge Pipeline: File-level Operations
+# 17. Interferogram Generation & Processing
 # ===========================================================================
-
-def get_file_geo_metadata(tif_path):
-    """Read GDAL geotransform, projection, shape and EPSG from a GeoTIFF.
-
-    Parameters
-    ----------
-    tif_path : str or Path
-
-    Returns
-    -------
-    gt : tuple  GDAL geotransform (x0, dx, 0, y0, 0, dy).
-    proj_wkt : str
-    shape : tuple (rows, cols)
-    epsg : int or None
-    """
-    ds = gdal.Open(str(tif_path))
-    if ds is None:
-        raise FileNotFoundError(f'Cannot open {tif_path}')
-    gt = ds.GetGeoTransform()
-    proj_wkt = ds.GetProjection()
-    shape = (ds.RasterYSize, ds.RasterXSize)
-    epsg = None
-    if proj_wkt:
-        srs = osr.SpatialReference()
-        srs.ImportFromWkt(proj_wkt)
-        epsg = srs.GetAttrValue('AUTHORITY', 1)
-        if epsg is not None:
-            epsg = int(epsg)
-    ds = None
-    return gt, proj_wkt, shape, epsg
 
 def _get_hdf5_geo_metadata(h5_path, subdataset='/data/VV'):
     """Read coordinate vectors and EPSG from an OPERA CSLC HDF5 file.
@@ -2991,191 +2836,13 @@ def _get_hdf5_geo_metadata(h5_path, subdataset='/data/VV'):
         shape = f[subdataset].shape
     return x, y, epsg, shape
 
-def _crop_hdf5(h5_path, output_path, wsen_buf, subdataset, fill_nan):
-    """Crop HDF5 file: read only the overlap region, write GeoTIFF."""
-    try:
-        x_coords, y_coords, epsg, shape = _get_hdf5_geo_metadata(
-            h5_path, subdataset)
-    except Exception as e:
-        print(f'  ERROR reading HDF5 {h5_path}: {e}')
-        return False
-
-    # Transform wsen to native CRS
-    if epsg and epsg != 4326:
-        src_srs = osr.SpatialReference(); src_srs.ImportFromEPSG(4326)
-        dst_srs = osr.SpatialReference(); dst_srs.ImportFromEPSG(int(epsg))
-        t = osr.CoordinateTransformation(src_srs, dst_srs)
-        corners = [
-            t.TransformPoint(wsen_buf[1], wsen_buf[0]),  # SW  (lat,lon)
-            t.TransformPoint(wsen_buf[3], wsen_buf[0]),  # NW
-            t.TransformPoint(wsen_buf[3], wsen_buf[2]),  # NE
-            t.TransformPoint(wsen_buf[1], wsen_buf[2]),  # SE
-        ]
-        native_W = min(c[0] for c in corners)
-        native_E = max(c[0] for c in corners)
-        native_S = min(c[1] for c in corners)
-        native_N = max(c[1] for c in corners)
-    else:
-        native_W, native_S, native_E, native_N = wsen_buf
-
-    # Find pixel range in native coordinates
-    col_mask = (x_coords >= native_W) & (x_coords <= native_E)
-    row_mask = (y_coords >= native_S) & (y_coords <= native_N)
-    if not np.any(col_mask) or not np.any(row_mask):
-        print(f'  skip (no overlap): {Path(h5_path).name}')
-        return True
-
-    cols = np.where(col_mask)[0]
-    rows = np.where(row_mask)[0]
-    c0, c1 = int(cols[0]), int(cols[-1]) + 1
-    r0, r1 = int(rows[0]), int(rows[-1]) + 1
-
-    # 1-pixel margin
-    c0 = max(0, c0 - 1)
-    c1 = min(len(x_coords), c1 + 1)
-    r0 = max(0, r0 - 1)
-    r1 = min(len(y_coords), r1 + 1)
-
-    try:
-        with h5py.File(h5_path, 'r') as f:
-            data = f[subdataset][r0:r1, c0:c1]
-    except Exception as e:
-        print(f'  ERROR reading HDF5 subset {h5_path}: {e}')
-        return False
-
-    if fill_nan:
-        if np.iscomplexobj(data):
-            data = np.where(np.isnan(data), 0 + 0j, data)
-        else:
-            data = np.nan_to_num(data, nan=0)
-
-    # Compute geotransform for subset
-    sub_x = x_coords[c0:c1]
-    sub_y = y_coords[r0:r1]
-    x_res = abs(sub_x[1] - sub_x[0]) if len(sub_x) > 1 else 1.0
-    dy_use = sub_y[1] - sub_y[0]     # preserve sign from coordinates
-    y0_use = float(sub_y[0])
-
-    gt = (float(sub_x[0]), x_res, 0, y0_use, 0, dy_use)
-
-    srs = osr.SpatialReference()
-    srs.ImportFromEPSG(int(epsg))
-    proj_wkt = srs.ExportToWkt()
-
-    save_tiff(output_path, data, gt, proj_wkt)
-    return True
-
-def _crop_geotiff(tif_path, output_path, wsen_buf):
-    """Crop GeoTIFF file using GDAL Warp."""
-    ds = gdal.Open(tif_path)
-    if ds is None:
-        print(f'  ERROR opening {tif_path}')
-        return False
-
-    # Get file extent in EPSG:4326
-    gt = ds.GetGeoTransform()
-    proj = ds.GetProjection()
-    cols, rows = ds.RasterXSize, ds.RasterYSize
-
-    # Compute file extent in native CRS
-    f_W = gt[0]
-    f_N = gt[3]
-    f_E = f_W + gt[1] * cols
-    f_S = f_N + gt[5] * rows
-
-    if proj:
-        src_srs = osr.SpatialReference(); src_srs.ImportFromWkt(proj)
-        dst_srs = osr.SpatialReference(); dst_srs.ImportFromEPSG(4326)
-        if not src_srs.IsSame(dst_srs):
-            t = osr.CoordinateTransformation(src_srs, dst_srs)
-            sw = t.TransformPoint(f_W, f_S)
-            ne = t.TransformPoint(f_E, f_N)
-            f_ext_W, f_ext_S = sw[1], sw[0]
-            f_ext_E, f_ext_N = ne[1], ne[0]
-        else:
-            f_ext_W, f_ext_S, f_ext_E, f_ext_N = f_W, f_S, f_E, f_N
-    else:
-        f_ext_W, f_ext_S, f_ext_E, f_ext_N = f_W, f_S, f_E, f_N
-
-    # Intersect
-    inter_W = max(f_ext_W, wsen_buf[0])
-    inter_S = max(f_ext_S, wsen_buf[1])
-    inter_E = min(f_ext_E, wsen_buf[2])
-    inter_N = min(f_ext_N, wsen_buf[3])
-
-    if inter_W >= inter_E or inter_S >= inter_N:
-        ds = None
-        print(f'  skip (no overlap): {Path(tif_path).name}')
-        return True
-
-    warp_opts = gdal.WarpOptions(
-        outputBounds=(inter_W, inter_S, inter_E, inter_N),
-        outputBoundsSRS='EPSG:4326',
-        dstSRS=proj if proj else None,
-        format='GTiff',
-        creationOptions=['COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=IF_SAFER'],
-        resampleAlg='lanczos',
-    )
-    result = gdal.Warp(str(output_path), tif_path, options=warp_opts)
-    ds = None
-    if result is None:
-        print(f'  ERROR warping {tif_path}')
-        return False
-    result = None
-    return True
-
-def crop_slc_single(input_file, output_file, wsen, buffer=0.0,
-                    fill_nan=False, subdataset='/data/VV'):
-    """Crop a single SLC file (HDF5 or GeoTIFF) to WSEN bounds + buffer.
-
-    Reads only the overlapping region from the input and writes a compact
-    GeoTIFF covering the intersection area.
-
-    Parameters
-    ----------
-    input_file : str or Path
-        Input file (HDF5 or GeoTIFF).
-    output_file : str or Path
-        Output cropped GeoTIFF.
-    wsen : tuple
-        (west, south, east, north) in EPSG:4326.
-    buffer : float
-        Buffer to add around wsen in degrees.
-    fill_nan : bool
-        Fill NaN values with 0.
-    subdataset : str
-        HDF5 subdataset path (for HDF5 inputs).
-
-    Returns
-    -------
-    bool
-        True on success, False on failure.
-    """
-    output_file = Path(output_file)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    if output_file.exists():
-        print(f'  skip (exists): {output_file.name}')
-        return True
-
-    # Apply buffer
-    wsen_buf = (wsen[0] - buffer, wsen[1] - buffer,
-                wsen[2] + buffer, wsen[3] + buffer)
-
-    input_file_str = str(input_file)
-
-    if input_file_str.endswith('.h5') or input_file_str.endswith('.hdf5'):
-        return _crop_hdf5(input_file_str, str(output_file), wsen_buf,
-                          subdataset, fill_nan)
-    else:
-        return _crop_geotiff(input_file_str, str(output_file), wsen_buf)
-
-def generate_ifgram_pairs(slc_dir, output_dir, n_connections=3):
+def generate_ifgram_pairs(slc_dir, output_dir, n_connections=3,
+                          output_name='date12_list.txt'):
     """Generate sequential interferometric pair list from SLC directories.
 
     Scans subdirectories under *slc_dir* for YYYYMMDD-formatted names,
     generates sequential nearest-neighbor pairs, and writes
-    ``ifgram_list.txt`` to *output_dir*.
+    ``date12_list.txt`` to *output_dir*.
 
     Parameters
     ----------
@@ -3185,11 +2852,13 @@ def generate_ifgram_pairs(slc_dir, output_dir, n_connections=3):
         Output directory for the pair list file.
     n_connections : int
         Number of nearest-neighbor connections (default 3).
+    output_name : str
+        Output file name (default ``date12_list.txt``).
 
     Returns
     -------
     output_file : Path
-        Path to the generated ``ifgram_list.txt``.
+        Path to the generated pair list file.
     """
     slc_dir = Path(slc_dir)
     output_dir = Path(output_dir)
@@ -3230,7 +2899,7 @@ def generate_ifgram_pairs(slc_dir, output_dir, n_connections=3):
     print(f'Generated {len(pairs)} pairs (n_connections={n_connections})')
 
     # Write output
-    output_file = output_dir / 'ifgram_list.txt'
+    output_file = output_dir / output_name
     with open(output_file, 'w') as f:
         f.write('# Interferometric pairs\n')
         f.write('# Date12\n')
@@ -3238,71 +2907,6 @@ def generate_ifgram_pairs(slc_dir, output_dir, n_connections=3):
             f.write(f'    {d1}-{d2}\n')
 
     print(f'Wrote {len(pairs)} pairs to {output_file}')
-    return output_file
-
-def form_single_ifgram(ref_slc, sec_slc, output_file):
-    """Form a complex interferogram from two geocoded SLC GeoTIFFs.
-
-    Since both SLCs are already geocoded and aligned to the same grid,
-    this computes ``ref * conj(sec)`` directly.
-
-    Parameters
-    ----------
-    ref_slc : str or Path
-        Path to the reference SLC GeoTIFF.
-    sec_slc : str or Path
-        Path to the secondary SLC GeoTIFF.
-    output_file : str or Path
-        Path for the output complex interferogram (.int.tif).
-
-    Returns
-    -------
-    output_file : Path or None
-    """
-    output_file = Path(output_file)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    if output_file.exists():
-        print(f'  skip (exists): {output_file.name}')
-        return output_file
-
-    ds_ref = gdal.Open(str(ref_slc))
-    ds_sec = gdal.Open(str(sec_slc))
-    if ds_ref is None or ds_sec is None:
-        print(f'  ERROR: cannot open {ref_slc} or {sec_slc}')
-        return None
-
-    ref_arr = ds_ref.GetRasterBand(1).ReadAsArray()
-    sec_arr = ds_sec.GetRasterBand(1).ReadAsArray()
-
-    if ref_arr.shape != sec_arr.shape:
-        if ds_ref.RasterXSize == ds_sec.RasterXSize and ds_ref.RasterYSize == ds_sec.RasterYSize:
-            ref_arr = ref_arr.astype(np.complex64)
-            sec_arr = sec_arr.astype(np.complex64)
-        else:
-            print(f'  ERROR: shape mismatch {ref_arr.shape} vs {sec_arr.shape}')
-            return None
-
-    ref_cx = ref_arr.astype(np.complex64)
-    sec_cx = sec_arr.astype(np.complex64)
-
-    ifg = ref_cx * np.conj(sec_cx)
-
-    gt = ds_ref.GetGeoTransform()
-    proj = ds_ref.GetProjection()
-
-    drv = gdal.GetDriverByName('GTiff')
-    out_ds = drv.Create(str(output_file), ds_ref.RasterXSize, ds_ref.RasterYSize,
-                        1, gdal.GDT_CFloat32,
-                        ['COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=IF_SAFER'])
-    out_ds.SetGeoTransform(gt)
-    out_ds.SetProjection(proj)
-    out_ds.GetRasterBand(1).WriteArray(ifg)
-    out_ds = None
-    ds_ref = None
-    ds_sec = None
-
-    print(f'  created: {output_file.name}')
     return output_file
 
 def ifgram_and_coherence(ref_h5, sec_h5, burst_id, ifgram_dir,
@@ -3402,132 +3006,6 @@ def ifgram_and_coherence(ref_h5, sec_h5, burst_id, ifgram_dir,
 
     return ifg_path, coh_path
 
-
-def stitch_ifgrams(burst_dir, out_bounds_wsen, output_dir,
-                   file_ext='.int.tif'):
-    """Stitch per-burst interferograms into unified products.
-
-    Reads per-burst GeoTIFFs with GDAL, computes union extent using
-    proper min/max, normalises dy convention, and passes to
-    :func:`stitch_arrays`.
-
-    Parameters
-    ----------
-    burst_dir : str or Path
-        Directory containing per-burst subdirectories.
-    out_bounds_wsen : tuple
-        (west, south, east, north) in EPSG:4326.
-    output_dir : str or Path
-        Output directory for stitched files.
-    file_ext : str
-        File extension to collect (default '.int.tif').
-
-    Returns
-    -------
-    ok : int
-    """
-    burst_dir = Path(burst_dir)
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    burst_pattern = re.compile(r'^t\d+_\d+_iw\d+$')
-    bursts = sorted(
-    (d for d in burst_dir.iterdir() if d.is_dir() and burst_pattern.match(d.name)),
-    key=lambda p: (p.name.split('_')[-1], int(p.name.split('_')[1]))
-    )
-
-    if not bursts:
-        print('No burst directories found.')
-        return 0
-
-    pair_files = {}
-    for burst_path in bursts:
-        for f in sorted(burst_path.glob(f'*{file_ext}')):
-            base = f.name.replace(file_ext, '')
-            if re.match(r'\d{8}_\d{8}', base):
-                pair_files.setdefault(base, []).append(f)
-
-    epsg_utm = 32605
-    for _, files in pair_files.items():
-        for fpath in files:
-            _, _, _, epsg = get_file_geo_metadata(fpath)
-            if epsg:
-                epsg_utm = epsg
-                break
-        break
-
-    ok = 0
-    for pair_name, file_list in sorted(pair_files.items()):
-        out_path = output_dir / f'{pair_name}{file_ext}'
-        if out_path.exists():
-            print(f'  skip (exists): {pair_name}')
-            ok += 1
-            continue
-
-        # Read files, compute extent correctly regardless of dy sign
-        pieces = []
-        proj_wkt = None
-        sample_dtype = None
-        for fp in file_list:
-            ds = gdal.Open(str(fp))
-            if ds is None:
-                continue
-            arr = ds.GetRasterBand(1).ReadAsArray()
-            if sample_dtype is None:
-                sample_dtype = arr.dtype
-            gt_in = ds.GetGeoTransform()
-            if proj_wkt is None:
-                proj_wkt = ds.GetProjection()
-            ds = None
-
-            x0, dx_p, _, y0, _, dy_p = gt_in
-            x1 = x0 + arr.shape[1] * dx_p
-            y1 = y0 + arr.shape[0] * dy_p
-            pieces.append({
-                'arr': arr, 'gt': gt_in,
-                'x_min': min(x0, x1), 'x_max': max(x0, x1),
-                'y_min': min(y0, y1), 'y_max': max(y0, y1),
-                'dx': dx_p, 'dy': dy_p,
-            })
-
-        if not pieces:
-            continue
-
-        dx_use, dy_use = pieces[0]['dx'], pieces[0]['dy']
-
-        # Union extent with proper min/max (matches sarforge)
-        ulx = min(p['x_min'] for p in pieces)
-        lrx = max(p['x_max'] for p in pieces)
-        uly = max(p['y_max'] for p in pieces)
-        lry = min(p['y_min'] for p in pieces)
-
-        # Normalise arrays to dy<0, stitch_arrays expects standard convention
-        arrays_list = []
-        for p in pieces:
-            arr = p['arr']
-            gt = p['gt']
-            if gt[5] > 0:
-                arr = np.flipud(arr)
-                x0_s, dx_s, _, y0_s, _, dy_s = gt
-                nrows = arr.shape[0]
-                y0_s = y0_s + (nrows - 1) * dy_s
-                dy_s = -dy_s
-                gt = (x0_s, dx_s, 0, y0_s, 0, dy_s)
-            arrays_list.append((arr, gt, proj_wkt))
-
-        try:
-            stitched, out_gt, out_wkt = stitch_arrays(
-                arrays_list, out_bounds_wsen,
-                epsg_utm=epsg_utm)
-            save_tiff(str(out_path), stitched, out_gt, out_wkt)
-            print(f'  stitched: {pair_name} ({len(file_list)} bursts)')
-            ok += 1
-        except Exception as e:
-            print(f'  ERROR stitching {pair_name}: {e}')
-
-    print(f'Stitched {ok}/{len(pair_files)} pairs')
-    return ok
-
 def multilook_tif(input_tif, output_tif=None, lks_y=1, lks_x=1,
                   method='mean'):
     """Apply multilooking to a GDAL-readable GeoTIFF file.
@@ -3552,7 +3030,7 @@ def multilook_tif(input_tif, output_tif=None, lks_y=1, lks_x=1,
     input_tif = Path(input_tif)
 
     if output_tif is None:
-        output_tif = input_tif.parent / f'multilooked_{input_tif.name}'
+        output_tif = input_tif.parent / f'mli_{input_tif.name}'
     output_tif = Path(output_tif)
 
     if output_tif.exists():
@@ -3621,7 +3099,7 @@ def filter_tif(input_tif, output_tif=None, alpha=0.5, psize=32):
     input_tif = Path(input_tif)
 
     if output_tif is None:
-        output_tif = input_tif.parent / f'filtered_{input_tif.name}'
+        output_tif = input_tif.parent / f'filt_{input_tif.name}'
     output_tif = Path(output_tif)
 
     if output_tif.exists():
@@ -3640,16 +3118,293 @@ def filter_tif(input_tif, output_tif=None, alpha=0.5, psize=32):
     proj = ds.GetProjection()
     ds = None
 
-    nodata = np.abs(arr) < 1e-6
     filtered = goldstein_filter(arr, alpha=alpha, psize=psize,
-                                nodata_mask=nodata)
+                                no_data_value=0.0 + 0.0j)
 
     save_tiff(str(output_tif), filtered, gt, proj)
     print(f'  filtered: {input_tif.name} -> {output_tif.name}')
     return output_tif
 
+def _read_cslc_subset(h5_path, wsen_buf, subdataset='/data/VV'):
+    """Read only the AOI-overlapping subset of an OPERA CSLC HDF5 file.
+
+    Reads only the pixel block intersecting *wsen_buf* (native CRS), so
+    peak memory is bounded by the cropped part rather than the full burst.
+
+    Parameters
+    ----------
+    h5_path : str or Path
+        Path to the OPERA CSLC HDF5 file.
+    wsen_buf : tuple
+        (west, south, east, north) in native CRS (or EPSG:4326 if the
+        file is in geographic coordinates).
+    subdataset : str
+        HDF5 subdataset path (default '/data/VV').
+
+    Returns
+    -------
+    data : np.ndarray or None
+        Complex64 array ``[rows, cols]`` of the overlap region, NaN
+        replaced by ``0+0j``; ``None`` if no overlap or read failure.
+    gt : tuple or None
+        GDAL geotransform of the subset.
+    epsg : int or None
+        EPSG code of the native CRS.
+    proj_wkt : str or None
+        Projection WKT.
+    """
+    try:
+        x_coords, y_coords, epsg, shape = _get_hdf5_geo_metadata(
+            h5_path, subdataset)
+    except Exception as e:
+        print(f'  ERROR reading HDF5 {h5_path}: {e}')
+        return None, None, None, None
+
+    # Transform wsen to native CRS
+    if epsg and epsg != 4326:
+        src_srs = osr.SpatialReference(); src_srs.ImportFromEPSG(4326)
+        dst_srs = osr.SpatialReference(); dst_srs.ImportFromEPSG(int(epsg))
+        t = osr.CoordinateTransformation(src_srs, dst_srs)
+        corners = [
+            t.TransformPoint(wsen_buf[1], wsen_buf[0]),  # SW  (lat,lon)
+            t.TransformPoint(wsen_buf[3], wsen_buf[0]),  # NW
+            t.TransformPoint(wsen_buf[3], wsen_buf[2]),  # NE
+            t.TransformPoint(wsen_buf[1], wsen_buf[2]),  # SE
+        ]
+        native_W = min(c[0] for c in corners)
+        native_E = max(c[0] for c in corners)
+        native_S = min(c[1] for c in corners)
+        native_N = max(c[1] for c in corners)
+    else:
+        native_W, native_S, native_E, native_N = wsen_buf
+
+    # Find pixel range in native coordinates
+    col_mask = (x_coords >= native_W) & (x_coords <= native_E)
+    row_mask = (y_coords >= native_S) & (y_coords <= native_N)
+    if not np.any(col_mask) or not np.any(row_mask):
+        print(f'  skip (no overlap): {Path(h5_path).name}')
+        return None, None, None, None
+
+    cols = np.where(col_mask)[0]
+    rows = np.where(row_mask)[0]
+    c0, c1 = int(cols[0]), int(cols[-1]) + 1
+    r0, r1 = int(rows[0]), int(rows[-1]) + 1
+
+    # 1-pixel margin
+    c0 = max(0, c0 - 1)
+    c1 = min(len(x_coords), c1 + 1)
+    r0 = max(0, r0 - 1)
+    r1 = min(len(y_coords), r1 + 1)
+
+    try:
+        with h5py.File(h5_path, 'r') as f:
+            data = f[subdataset][r0:r1, c0:c1]
+    except Exception as e:
+        print(f'  ERROR reading HDF5 subset {h5_path}: {e}')
+        return None, None, None, None
+
+    if np.iscomplexobj(data):
+        data = np.where(np.isnan(data), 0 + 0j, data)
+    else:
+        data = np.nan_to_num(data, nan=0)
+
+    # Compute geotransform for subset
+    sub_x = x_coords[c0:c1]
+    sub_y = y_coords[r0:r1]
+    x_res = abs(sub_x[1] - sub_x[0]) if len(sub_x) > 1 else 1.0
+    dy_use = sub_y[1] - sub_y[0]     # preserve sign from coordinates
+    y0_use = float(sub_y[0])
+    gt = (float(sub_x[0]), x_res, 0, y0_use, 0, dy_use)
+
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(int(epsg))
+    proj_wkt = srs.ExportToWkt()
+    return data, gt, epsg, proj_wkt
+
+def generate_stitched_ifgrams(
+    cslc_dir, date12_list, output_dir, bbox_wsen,
+    burst_id_list=None, buffer=0.05, coh_win=5, lks_y=2, lks_x=4,
+    save_cropped_slc=False, save_ifgs=False, subdataset='/data/VV',
+):
+    """Generate stitched, multilooked interferograms & coherence from burst CSLCs.
+
+    Memory-efficient sequential workflow (no parallel processing):
+
+    1. **Select pairs** — input *date12_list* (``[(ref_ymd, sec_ymd), ...]``)
+       is used as-is; generate it with :func:`generate_ifgram_pairs`.
+    2. **Generate (stitched) interferograms** — for each pair:
+       - 1) for each burst: read only the AOI-cropped part (a fraction of a
+         burst in memory), form ifg/coh, keep only the small cropped pieces;
+       - 2) stitch all per-burst pieces with :func:`stitch_arrays`;
+       - 3) save stitched ifg/coh, then multilook the ifg (coherence is
+         **not** multilooked).
+    3. **Outputs** — multilooked stitched ifg + full-resolution coherence.
+
+    Optional intermediate products can be saved via *save_cropped_slc*
+    (per-burst cropped SLCs) and *save_ifgs* (per-burst interferograms).
+
+    Parameters
+    ----------
+    cslc_dir : str or Path
+        Directory with per-burst CSLC: ``{cslc_dir}/{burst_id}/{date}/{burst_id}_{date}.h5``.
+    date12_list : list of (str, str)
+        Interferometric pairs, e.g. ``[('20240915', '20241009'), ...]``.
+    output_dir : str or Path
+        Output directory. Structure (per pair):
+          ``{output_dir}/stitched/{d1}_{d2}/{d1}_{d2}.int.tif``
+          ``{output_dir}/stitched/{d1}_{d2}/{d1}_{d2}.coh.tif``
+          ``{output_dir}/stitched/{d1}_{d2}/mli_{d1}_{d2}.int.tif``
+        and optionally:
+          ``{output_dir}/{burst_id}/{date}.slc.tif`` (save_cropped_slc)
+          ``{output_dir}/{burst_id}/{d1}_{d2}.int.tif`` + ``.coh.tif`` (save_ifgs)
+    bbox_wsen : tuple
+        (west, south, east, north) in EPSG:4326.
+    burst_id_list : list of str, optional
+        Burst IDs to process; default: all ``t*_*_iw*`` dirs under *cslc_dir*.
+    buffer : float
+        Buffer (deg) added around *bbox_wsen* when cropping each burst.
+    coh_win : int
+        Sliding-window size for coherence estimation (default 5).
+    lks_y, lks_x : int
+        Multilook factors in azimuth/range (default 2 × 4).
+    save_cropped_slc : bool
+        Save per-burst cropped SLC GeoTIFFs (default False).
+    save_ifgs : bool
+        Save per-burst interferogram/coherence GeoTIFFs (default False).
+    subdataset : str
+        HDF5 subdataset path for the SLC data (default '/data/VV').
+
+    Returns
+    -------
+    ifg_ml_list : list of Path
+        Multilooked stitched interferogram files
+        (``{output_dir}/stitched/{d1}_{d2}/mli_{d1}_{d2}.int.tif``).
+    coh_list : list of Path
+        Stitched coherence files at full resolution (not multilooked)
+        (``{output_dir}/stitched/{d1}_{d2}/{d1}_{d2}.coh.tif``).
+    """
+    cslc_dir = Path(cslc_dir)
+    output_dir = Path(output_dir)
+    stitched_dir = output_dir / 'stitched'
+    stitched_dir.mkdir(parents=True, exist_ok=True)
+
+    if burst_id_list is None:
+        burst_pattern = re.compile(r'^t\d+_\d+_iw\d+$')
+        burst_id_list = sorted(
+            d.name for d in cslc_dir.iterdir()
+            if d.is_dir() and burst_pattern.match(d.name))
+    print(f'Bursts: {len(burst_id_list)}  Pairs: {len(date12_list)}')
+
+    wsen_buf = (bbox_wsen[0] - buffer, bbox_wsen[1] - buffer,
+                bbox_wsen[2] + buffer, bbox_wsen[3] + buffer)
+
+    ifg_ml_list, coh_list = [], []
+    for k, (d1, d2) in enumerate(date12_list):
+        pair_name = f'{d1}_{d2}'
+        pair_dir = stitched_dir / pair_name
+        pair_dir.mkdir(parents=True, exist_ok=True)
+        ifg_path = pair_dir / f'{pair_name}.int.tif'
+        coh_path = pair_dir / f'{pair_name}.coh.tif'
+        ml_ifg = pair_dir / f'mli_{pair_name}.int.tif'
+        if ml_ifg.exists() and coh_path.exists():
+            print(f'  skip (exists): {pair_name}')
+            ifg_ml_list.append(ml_ifg)
+            coh_list.append(coh_path)
+            continue
+
+        print(f'[{k+1}/{len(date12_list)}] {pair_name}')
+
+        # ---- 1) per-burst: crop in memory → form ifg/coh pieces ----
+        ifg_pieces, coh_pieces = [], []
+        epsg_utm = None
+        for i, burst_id in enumerate(burst_id_list):
+            ref_h5 = cslc_dir / burst_id / d1 / f'{burst_id}_{d1}.h5'
+            sec_h5 = cslc_dir / burst_id / d2 / f'{burst_id}_{d2}.h5'
+            if not ref_h5.exists() or not sec_h5.exists():
+                continue
+
+            ref_arr, ref_gt, epsg, proj = _read_cslc_subset(
+                ref_h5, wsen_buf, subdataset)
+            sec_arr, sec_gt, _, _ = _read_cslc_subset(
+                sec_h5, wsen_buf, subdataset)
+            if ref_arr is None or sec_arr is None:
+                continue
+            if epsg_utm is None:
+                epsg_utm = epsg
+
+            # align to common grid & form ifg/coh
+            ref_a, sec_a, common_gt = align_cslc_pair(
+                ref_arr, ref_gt, sec_arr, sec_gt)
+            ifg = ref_a * np.conj(sec_a)
+            win_area = coh_win * coh_win
+            ref_pow = (np.abs(ref_a) ** 2).astype(np.float32)
+            sec_pow = (np.abs(sec_a) ** 2).astype(np.float32)
+            ifg_sum = ndimage.uniform_filter(ifg, size=coh_win,
+                                             mode='constant') * win_area
+            ref_sum = ndimage.uniform_filter(ref_pow, size=coh_win,
+                                             mode='constant') * win_area
+            sec_sum = ndimage.uniform_filter(sec_pow, size=coh_win,
+                                             mode='constant') * win_area
+            with np.errstate(invalid='ignore'):
+                coh = np.abs(ifg_sum) / np.sqrt(ref_sum * sec_sum)
+            coh = np.nan_to_num(coh, nan=0.0).clip(0.0, 1.0).astype(np.float32)
+
+            ifg_pieces.append((ifg, common_gt, proj))
+            coh_pieces.append((coh, common_gt, proj))
+
+            # optional intermediate products
+            if save_cropped_slc:
+                crop_dir = output_dir / burst_id
+                crop_dir.mkdir(parents=True, exist_ok=True)
+                save_tiff(crop_dir / f'{d1}.slc.tif', ref_arr, ref_gt, proj)
+                save_tiff(crop_dir / f'{d2}.slc.tif', sec_arr, sec_gt, proj)
+            if save_ifgs:
+                ifg_dir = output_dir / burst_id
+                ifg_dir.mkdir(parents=True, exist_ok=True)
+                save_tiff(ifg_dir / f'{pair_name}.int.tif', ifg,
+                          common_gt, proj, dtype=gdal.GDT_CFloat32)
+                save_tiff(ifg_dir / f'{pair_name}.coh.tif', coh,
+                          common_gt, proj, dtype=gdal.GDT_Float32)
+
+            del ref_arr, sec_arr, ref_a, sec_a, ifg, coh
+            gc.collect()
+            print(f'  burst {i+1}/{len(burst_id_list)}: {burst_id}')
+
+        if not ifg_pieces:
+            print(f'  WARN: no valid burst pieces for {pair_name}, skip')
+            continue
+
+        # ---- 2) stitch all per-burst pieces (reuse stitch_arrays) ----
+        if epsg_utm is None:
+            epsg_utm = 32605
+        stitched_ifg, out_gt, proj_wkt = stitch_arrays(
+            ifg_pieces, bbox_wsen, epsg_utm=epsg_utm)
+        stitched_coh, _, _ = stitch_arrays(
+            coh_pieces, bbox_wsen, epsg_utm=epsg_utm)
+
+        # ---- 3) save stitched products ----
+        save_tiff(str(ifg_path), stitched_ifg, out_gt, proj_wkt,
+                  dtype=gdal.GDT_CFloat32)
+        save_tiff(str(coh_path), stitched_coh, out_gt, proj_wkt,
+                  dtype=gdal.GDT_Float32)
+        del stitched_ifg, stitched_coh
+        gc.collect()
+
+        # ---- 4) multilook ifg only (coherence NOT multilooked) ----
+        multilook_tif(ifg_path, ml_ifg, lks_y=lks_y, lks_x=lks_x,
+                      method='mean')
+        ifg_ml_list.append(ml_ifg)
+        coh_list.append(coh_path)
+
+    print(f'Generated {len(ifg_ml_list)} stitched multilooked ifg + {len(coh_list)} coh')
+    return ifg_ml_list, coh_list
+
 def generate_phsig_coh_tif(input_tif, output_tif=None, nlks=8):
     """Compute phase-sigma correlation from a complex interferogram TIF.
+
+    The output file keeps the input file's full prefix (e.g. input
+    ``filt_mli_20240915_20241009.int.tif`` → output
+    ``filt_mli_20240915_20241009.phsig.coh.tif``).
 
     Parameters
     ----------
@@ -3667,10 +3422,7 @@ def generate_phsig_coh_tif(input_tif, output_tif=None, nlks=8):
     input_tif = Path(input_tif)
 
     if output_tif is None:
-        base = input_tif.name.replace('.int.tif', '').replace('.int', '')
-        for prefix in ['filtered_', 'multilooked_', 'filtered_multilooked_']:
-            if base.startswith(prefix):
-                base = base[len(prefix):]
+        base = input_tif.name.replace('.int.tif', '')
         output_tif = input_tif.parent / f'{base}.phsig.coh.tif'
     output_tif = Path(output_tif)
 
@@ -3697,7 +3449,7 @@ def generate_phsig_coh_tif(input_tif, output_tif=None, nlks=8):
     return output_tif
 
 # ===========================================================================
-# 18. Unwrapping
+# 18.Unwrapping
 # ===========================================================================
 
 def unwrap_single_ifgram(ifg_file, corr_file, output_file,
@@ -3795,7 +3547,7 @@ def unwrap_single_ifgram(ifg_file, corr_file, output_file,
     return output_file
 
 # ===========================================================================
-# 19. Baseline Computation
+# 19.Baseline Computation
 # ===========================================================================
 
 def compute_baselines_for_bursts(burst_ids, cslc_dir, output_base):
@@ -3913,10 +3665,13 @@ def compute_baselines_for_bursts(burst_ids, cslc_dir, output_base):
     return total_ok
 
 def merge_baselines(baseline_dir, output_dir):
-    """Merge per-burst baseline text files into MintPy-compatible format.
+    """Merge per-burst baseline text files into a single file per date pair.
 
     Reads ``Bperp (m)`` / ``Bpar (m)`` from per-burst ``REFDATE_SECDATE.txt``
-    files and merges them into a single baseline file per date pair.
+    files. For each date pair, the output file records the baseline of the
+    **first** and **last** burst (sorted by burst ID) as comment lines,
+    plus the **average** baseline over all bursts as the data lines
+    (kept in MintPy-compatible format: ``Bperp (m)`` / ``Bpar (m)``).
 
     Parameters
     ----------
@@ -3971,14 +3726,24 @@ def merge_baselines(baseline_dir, output_dir):
             ok += 1
             continue
 
+        # first / last burst (burst_dirs are sorted) and overall average
+        Bperp_first = values[0]['Bperp']
+        Bpar_first = values[0]['Bpar']
+        Bperp_last = values[-1]['Bperp']
+        Bpar_last = values[-1]['Bpar']
         Bperp = np.mean([v['Bperp'] for v in values])
         Bpar = np.mean([v['Bpar'] for v in values])
 
         with open(out_file, 'w') as f:
+            f.write(f'# Bperp (m) of first burst  {burst_dirs[0].name}: {Bperp_first:.3f}\n')
+            f.write(f'# Bpar (m) of first burst   {burst_dirs[0].name}: {Bpar_first:.3f}\n')
+            f.write(f'# Bperp (m) of last burst   {burst_dirs[-1].name}: {Bperp_last:.3f}\n')
+            f.write(f'# Bpar (m) of last burst    {burst_dirs[-1].name}: {Bpar_last:.3f}\n')
             f.write(f'Bperp (m): {Bperp:.3f}\n')
             f.write(f'Bpar (m): {Bpar:.3f}\n')
 
-        print(f'  merged: {pair_key} ({len(values)} bursts)')
+        print(f'  merged: {pair_key} ({len(values)} bursts) '
+              f'first={burst_dirs[0].name} last={burst_dirs[-1].name}')
         ok += 1
 
     print(f'Merged {ok}/{len(pair_data)} pairs')
