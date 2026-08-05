@@ -2857,8 +2857,7 @@ def generate_ifgram_pairs(slc_dir, output_dir, n_connections=3,
 
     Returns
     -------
-    output_file : Path
-        Path to the generated pair list file.
+    date12_list : list(str) in YYYYMMDD_YYYYMMDD.
     """
     slc_dir = Path(slc_dir)
     output_dir = Path(output_dir)
@@ -2901,13 +2900,16 @@ def generate_ifgram_pairs(slc_dir, output_dir, n_connections=3,
     # Write output
     output_file = output_dir / output_name
     with open(output_file, 'w') as f:
-        f.write('# Interferometric pairs\n')
-        f.write('# Date12\n')
+        #f.write('# Interferometric pairs\n')
+        #f.write('# Date12\n')
         for d1, d2 in sorted(pairs):
-            f.write(f'    {d1}-{d2}\n')
-
+            f.write(f'{d1}_{d2}\n')
     print(f'Wrote {len(pairs)} pairs to {output_file}')
-    return output_file
+
+    # prepare output list
+    date12_list = [f'{d1}_{d2}' for d1, d2 in sorted(pairs)]
+
+    return date12_list
 
 def ifgram_and_coherence(ref_h5, sec_h5, burst_id, ifgram_dir,
                          coh_win=5):
@@ -3224,7 +3226,7 @@ def _read_cslc_subset(h5_path, wsen_buf, subdataset='/data/VV'):
 def generate_stitched_ifgrams(
     cslc_dir, date12_list, output_dir, bbox_wsen,
     burst_id_list=None, buffer=0.05, coh_win=5, lks_y=2, lks_x=4,
-    save_full_res=True, save_cropped_slc=False, save_ifgs=False,
+    save_full_res=False, save_cropped_slc=False, save_ifgs=False,
     subdataset='/data/VV',
 ):
     """Generate stitched, multilooked interferograms & coherence from burst CSLCs.
@@ -3250,14 +3252,14 @@ def generate_stitched_ifgrams(
     ----------
     cslc_dir : str or Path
         Directory with per-burst CSLC: ``{cslc_dir}/{burst_id}/{date}/{burst_id}_{date}.h5``.
-    date12_list : list of (str, str)
+    date12_list : list of str_str
         Interferometric pairs, e.g. ``[('20240915', '20241009'), ...]``.
     output_dir : str or Path
         Output directory. Structure (per pair):
-          ``{output_dir}/stitched/{d1}_{d2}/mli_{d1}_{d2}.int.tif``
+          ``{output_dir}/{d1}_{d2}/mli_{d1}_{d2}.int.tif``
         and, if *save_full_res*:
-          ``{output_dir}/stitched/{d1}_{d2}/{d1}_{d2}.int.tif``
-          ``{output_dir}/stitched/{d1}_{d2}/{d1}_{d2}.coh.tif``
+          ``{output_dir}/{d1}_{d2}/{d1}_{d2}.int.tif``
+          ``{output_dir}/{d1}_{d2}/{d1}_{d2}.coh.tif``
         and optionally:
           ``{output_dir}/{burst_id}/{date}.slc.tif`` (save_cropped_slc)
           ``{output_dir}/{burst_id}/{d1}_{d2}.int.tif`` + ``.coh.tif`` (save_ifgs)
@@ -3287,16 +3289,14 @@ def generate_stitched_ifgrams(
     -------
     ifg_ml_list : list of Path
         Multilooked stitched interferogram files
-        (``{output_dir}/stitched/{d1}_{d2}/mli_{d1}_{d2}.int.tif``).
+        (``{output_dir}/{d1}_{d2}/mli_{d1}_{d2}.int.tif``).
     coh_list : list of Path
         Stitched coherence files at full resolution (not multilooked)
-        (``{output_dir}/stitched/{d1}_{d2}/{d1}_{d2}.coh.tif``).
+        (``{output_dir}/{d1}_{d2}/{d1}_{d2}.coh.tif``).
         Empty when *save_full_res* is False.
     """
     cslc_dir = Path(cslc_dir)
     output_dir = Path(output_dir)
-    stitched_dir = output_dir / 'stitched'
-    stitched_dir.mkdir(parents=True, exist_ok=True)
 
     if burst_id_list is None:
         burst_pattern = re.compile(r'^t\d+_\d+_iw\d+$')
@@ -3309,21 +3309,21 @@ def generate_stitched_ifgrams(
                 bbox_wsen[2] + buffer, bbox_wsen[3] + buffer)
 
     ifg_ml_list, coh_list = [], []
-    for k, (d1, d2) in enumerate(date12_list):
-        pair_name = f'{d1}_{d2}'
-        pair_dir = stitched_dir / pair_name
+    for k, date12 in enumerate(date12_list):
+        d1, d2 = date12.split('_')
+        pair_dir = output_dir / date12
         pair_dir.mkdir(parents=True, exist_ok=True)
-        ifg_path = pair_dir / f'{pair_name}.int.tif'
-        coh_path = pair_dir / f'{pair_name}.coh.tif'
-        ml_ifg = pair_dir / f'mli_{pair_name}.int.tif'
+        ifg_path = pair_dir / 'full.int.tif'
+        coh_path = pair_dir / 'full.coh.tif'
+        ml_ifg = pair_dir / 'mli.int.tif'
         if ml_ifg.exists() and (not save_full_res or coh_path.exists()):
-            print(f'  skip (exists): {pair_name}')
+            print(f'  skip (exists): {date12}')
             ifg_ml_list.append(ml_ifg)
             if save_full_res:
                 coh_list.append(coh_path)
             continue
 
-        print(f'[{k+1}/{len(date12_list)}] {pair_name}')
+        print(f'[{k+1}/{len(date12_list)}] {date12}')
 
         # ---- 1) per-burst: crop in memory → form ifg (and cpx coh) pieces ----
         ifg_pieces, coh_pieces = [], []
@@ -3334,18 +3334,15 @@ def generate_stitched_ifgrams(
             if not ref_h5.exists() or not sec_h5.exists():
                 continue
 
-            ref_arr, ref_gt, epsg, proj = _read_cslc_subset(
-                ref_h5, wsen_buf, subdataset)
-            sec_arr, sec_gt, _, _ = _read_cslc_subset(
-                sec_h5, wsen_buf, subdataset)
+            ref_arr, ref_gt, epsg, proj = _read_cslc_subset(ref_h5, wsen_buf, subdataset)
+            sec_arr, sec_gt, _, _ = _read_cslc_subset(sec_h5, wsen_buf, subdataset)
             if ref_arr is None or sec_arr is None:
                 continue
             if epsg_utm is None:
                 epsg_utm = epsg
 
             # align to common grid & form ifg
-            ref_a, sec_a, common_gt = align_cslc_pair(
-                ref_arr, ref_gt, sec_arr, sec_gt)
+            ref_a, sec_a, common_gt = align_cslc_pair(ref_arr, ref_gt, sec_arr, sec_gt)
             ifg = ref_a * np.conj(sec_a)
             ifg_pieces.append((ifg, common_gt, proj))
 
@@ -3354,12 +3351,10 @@ def generate_stitched_ifgrams(
                 win_area = coh_win * coh_win
                 ref_pow = (np.abs(ref_a) ** 2).astype(np.float32)
                 sec_pow = (np.abs(sec_a) ** 2).astype(np.float32)
-                ifg_sum = ndimage.uniform_filter(ifg, size=coh_win,
-                                                 mode='constant') * win_area
-                ref_sum = ndimage.uniform_filter(ref_pow, size=coh_win,
-                                                 mode='constant') * win_area
-                sec_sum = ndimage.uniform_filter(sec_pow, size=coh_win,
-                                                 mode='constant') * win_area
+                kwargs = dict(size=coh_win, mode='constant')
+                ifg_sum = ndimage.uniform_filter(ifg, **kwargs) * win_area
+                ref_sum = ndimage.uniform_filter(ref_pow, **kwargs) * win_area
+                sec_sum = ndimage.uniform_filter(sec_pow, **kwargs) * win_area
                 with np.errstate(invalid='ignore'):
                     coh = np.abs(ifg_sum) / np.sqrt(ref_sum * sec_sum)
                 coh = np.nan_to_num(coh, nan=0.0).clip(0.0, 1.0).astype(np.float32)
@@ -3374,11 +3369,11 @@ def generate_stitched_ifgrams(
             if save_ifgs:
                 ifg_dir = output_dir / burst_id
                 ifg_dir.mkdir(parents=True, exist_ok=True)
-                save_tiff(ifg_dir / f'{pair_name}.int.tif', ifg,
-                          common_gt, proj, dtype=gdal.GDT_CFloat32)
+                out_path = ifg_dir / 'full.int.tif'
+                save_tiff(out_path, ifg, common_gt, proj, dtype=gdal.GDT_CFloat32)
                 if save_full_res:
-                    save_tiff(ifg_dir / f'{pair_name}.coh.tif', coh,
-                              common_gt, proj, dtype=gdal.GDT_Float32)
+                    out_path = ifg_dir / 'full.coh.tif'
+                    save_tiff(out_path, coh, common_gt, proj, dtype=gdal.GDT_Float32)
 
             del ref_arr, sec_arr, ref_a, sec_a, ifg
             if save_full_res:
@@ -3387,7 +3382,7 @@ def generate_stitched_ifgrams(
             print(f'  burst {i+1}/{len(burst_id_list)}: {burst_id}')
 
         if not ifg_pieces:
-            print(f'  WARN: no valid burst pieces for {pair_name}, skip')
+            print(f'  WARN: no valid burst pieces for {date12}, skip')
             continue
 
         # ---- 2) stitch all per-burst pieces (reuse stitch_arrays) ----
@@ -3398,34 +3393,28 @@ def generate_stitched_ifgrams(
 
         # ---- 3) optionally save full-resolution stitched products ----
         if save_full_res:
-            stitched_coh, _, _ = stitch_arrays(
-                coh_pieces, bbox_wsen, epsg_utm=epsg_utm)
-            save_tiff(str(ifg_path), stitched_ifg, out_gt, proj_wkt,
-                      dtype=gdal.GDT_CFloat32)
-            save_tiff(str(coh_path), stitched_coh, out_gt, proj_wkt,
-                      dtype=gdal.GDT_Float32)
+            stitched_coh, _, _ = stitch_arrays(coh_pieces, bbox_wsen, epsg_utm=epsg_utm)
+            save_tiff(str(ifg_path), stitched_ifg, out_gt, proj_wkt, dtype=gdal.GDT_CFloat32)
+            save_tiff(str(coh_path), stitched_coh, out_gt, proj_wkt, dtype=gdal.GDT_Float32)
             coh_list.append(coh_path)
             del stitched_coh
             gc.collect()
 
         # ---- 4) multilook ifg (from memory, no disk round-trip) ----
         ml_ifg_arr, ml_gt = multilook_ifg(stitched_ifg, lks_y, lks_x, out_gt)
-        save_tiff(str(ml_ifg), ml_ifg_arr, ml_gt, proj_wkt,
-                  dtype=gdal.GDT_CFloat32)
+        save_tiff(str(ml_ifg), ml_ifg_arr, ml_gt, proj_wkt, dtype=gdal.GDT_CFloat32)
         del stitched_ifg, ml_ifg_arr
         gc.collect()
         ifg_ml_list.append(ml_ifg)
 
-    print(f'Generated {len(ifg_ml_list)} stitched multilooked ifg'
-          f' + {len(coh_list)} full-res coh')
     return ifg_ml_list, coh_list
 
 def generate_phsig_coh_tif(input_tif, output_tif=None, nlks=8):
     """Compute phase-sigma correlation from a complex interferogram TIF.
 
     The output file keeps the input file's full prefix (e.g. input
-    ``filt_mli_20240915_20241009.int.tif`` → output
-    ``filt_mli_20240915_20241009.phsig.coh.tif``).
+    ``filt_mli.int.tif`` → output
+    ``filt_mli.phsig.coh.tif``).
 
     Parameters
     ----------
