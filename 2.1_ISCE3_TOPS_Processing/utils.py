@@ -441,15 +441,9 @@ def find_burst_input_files(ymd, burst_id, safe_base, orbit_dir, tec_dir):
         safe_path = safe_hits[0]
 
     # Prefer an orbit whose validity window covers the date (POEORB), else RESORB.
-    orbit_path = None
-    for eof in sorted(str(p) for p in orbit_dir.glob('*.EOF')):
-        m = re.search(r'V(\d{8}T\d{6})_(\d{8}T\d{6})', eof)
-        if m and m.group(1) <= ymd <= m.group(2):
-            orbit_path = eof
-            break
+    orbit_path = s1reader.get_orbit_file_from_dir(safe_path, orbit_dir, auto_download=True)
     if orbit_path is None:
-        res_hits = sorted(str(p) for p in orbit_dir.glob(f'S1*RESORB*{ymd}*.EOF'))
-        orbit_path = res_hits[0] if res_hits else None
+        raise ValueError('No precise/restituted orbit files found!')
 
     gim_hits = list(tec_dir.glob('*GIM.INX'))
     if gim_hits:
