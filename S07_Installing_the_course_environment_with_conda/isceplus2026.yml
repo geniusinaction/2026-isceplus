@@ -1,4 +1,4 @@
-name: isceplus2026
+name: earthscope_insar
 channels:
   - conda-forge
   - pyrocko
