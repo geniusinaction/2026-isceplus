@@ -1,9 +1,9 @@
-# Installing the course environment(s) with conda
+# Installing the 2025 course environment(s) with conda
 Gareth Funning, University of California, Riverside
 
 To use the course materials past the end of the course and closing of access to OpenScienceLab, you will need to install an environment that can support the various software packages and tools that the course makes use of. Luckily for us, it only takes a few simple `conda` (or `conda`'s faster cousin, `mamba`) commands to get the job done.
 
-These instructions aasume that you have an operating system with terminal access $-$ a Linux operating system, a Windows operating system with the WSL (Windows Subsystem for Linux) installed, or MacOS.
+These instructions assume that you have an operating system with terminal access $-$ a Linux operating system, a Windows operating system with WSL (Windows Subsystem for Linux) installed, or MacOS.
 
 ## 1. Install miniforge
 `miniforge` is the fully open source cousin of the `miniconda` package installer. It draws natively from the open source conda-forge package repository, in which many of the major packages we use in the course reside.
